@@ -26,6 +26,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Rational
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -33,6 +34,8 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
 import androidx.concurrent.futures.await
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
@@ -287,6 +290,10 @@ class CameraFragment : Fragment() {
                 .setTargetRotation(rotation)
                 .build()
 
+        val recorder = Recorder.Builder()
+            .build();
+        val videoCapture = VideoCapture.withOutput(recorder)
+
         // ImageAnalysis
         imageAnalyzer = ImageAnalysis.Builder()
                 // We request aspect ratio but no resolution
@@ -314,10 +321,24 @@ class CameraFragment : Fragment() {
         }
 
         try {
+            val rational = Rational(metrics.width(), metrics.height())
+
+            val viewPort = ViewPort.Builder(rational, rotation)
+                .setScaleType(ViewPort.FILL_CENTER)
+                .build()
+            val useCaseGroup = UseCaseGroup.Builder()
+                .addUseCase(videoCapture)
+                .addUseCase(preview!!)
+                .addUseCase(imageCapture!!)
+                .setViewPort(viewPort)
+                .build()
+
             // A variable number of use-cases can be passed here -
             // camera provides access to CameraControl & CameraInfo
+//            camera = cameraProvider.bindToLifecycle(
+//                    this, cameraSelector, preview, imageCapture, imageAnalyzer)
             camera = cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, imageCapture, imageAnalyzer)
+                this, cameraSelector, useCaseGroup)
 
             // Attach the viewfinder's surface provider to preview use case
             preview?.setSurfaceProvider(fragmentCameraBinding.viewFinder.surfaceProvider)
