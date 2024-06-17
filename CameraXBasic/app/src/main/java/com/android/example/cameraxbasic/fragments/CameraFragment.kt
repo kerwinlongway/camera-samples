@@ -22,6 +22,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.hardware.display.DisplayManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -32,6 +33,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.Recorder
@@ -41,6 +44,12 @@ import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.navigation.Navigation
 import androidx.window.WindowManager
 import com.android.example.cameraxbasic.KEY_EVENT_ACTION
@@ -94,6 +103,25 @@ class CameraFragment : Fragment() {
     private var cameraProvider: ProcessCameraProvider? = null
     private lateinit var windowManager: WindowManager
 
+
+    private var mExoPlayer: ExoPlayer? = null
+
+    private val pickMedia = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
+        if (uri != null) {
+            if (mExoPlayer == null) {
+                return@registerForActivityResult
+            }
+            fragmentCameraBinding.playerView.visibility = View.VISIBLE
+            fragmentCameraBinding.viewFinder.visibility = View.INVISIBLE
+            val exoPlayer = mExoPlayer!!
+            exoPlayer.setMediaItem(MediaItem.Builder().setUri(uri).build())
+            exoPlayer.prepare()
+            exoPlayer.play()
+        } else {
+
+        }
+    }
+
     private val displayManager by lazy {
         requireContext().getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
     }
@@ -128,6 +156,32 @@ class CameraFragment : Fragment() {
                 imageAnalyzer?.targetRotation = view.display.rotation
             }
         } ?: Unit
+    }
+
+    @SuppressLint("UnsafeOptInUsageError")
+    private fun initPlayerView() {
+        if (mExoPlayer == null) {
+            mExoPlayer = ExoPlayer.Builder(requireContext()).build()
+        }
+
+        val exoPlayer = mExoPlayer!!
+
+        fragmentCameraBinding.playerView.setPlayer(mExoPlayer)
+        fragmentCameraBinding.playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+        exoPlayer.playWhenReady = false
+        exoPlayer.repeatMode = Player.REPEAT_MODE_ONE
+
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                super.onPlaybackStateChanged(playbackState)
+                Log.d("video_debug", "playbackState: $playbackState")
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                super.onPlayerError(error)
+                Log.d("video_debug", "onPlayerError: $error")
+            }
+        })
     }
 
     override fun onResume() {
@@ -212,6 +266,18 @@ class CameraFragment : Fragment() {
             // Set up the camera and its use cases
             lifecycleScope.launch {
                 setUpCamera()
+            }
+        }
+
+        initPlayerView()
+
+        fragmentCameraBinding.btnTest.setOnClickListener {
+            if (mExoPlayer != null && mExoPlayer!!.isPlaying) {
+                mExoPlayer!!.stop()
+                fragmentCameraBinding.viewFinder.visibility = View.VISIBLE
+                fragmentCameraBinding.playerView.visibility = View.INVISIBLE
+            } else {
+                pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
             }
         }
     }
